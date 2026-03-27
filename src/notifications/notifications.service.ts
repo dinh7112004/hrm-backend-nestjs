@@ -1,0 +1,74 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { Notification, NotificationDocument } from './schemas/notification.schema';
+import { UsersService } from '../user/users.service'; // Thêm import này
+import { Expo, ExpoPushMessage } from 'expo-server-sdk'; // Thêm bộ máy Expo
+
+@Injectable()
+export class NotificationsService {
+    private expo = new Expo(); // Khởi tạo máy bắn Expo
+    private readonly logger = new Logger(NotificationsService.name); // Dùng Logger cho pro
+
+    constructor(
+        @InjectModel(Notification.name) private notificationModel: Model<NotificationDocument>,
+        private readonly usersService: UsersService // Tiêm UsersService vào đây
+    ) { }
+
+    // 1. Tạo thông báo mới (Lưu DB + Bắn Ting ting)
+    async create(createData: { userId: string; title: string; message: string; type?: string }) {
+        // A. Lưu thông báo vào Database (Để hiện trong chuông thông báo)
+        const newNotif = new this.notificationModel(createData);
+        const savedNotif = await newNotif.save();
+
+        // B. Bắn Push Notification ra màn hình khóa
+        try {
+            // Lấy thông tin nhân viên từ Database
+            const user = await this.usersService.findOne(createData.userId);
+
+            // Kiểm tra xem nhân viên có mã pushToken hợp lệ không
+            if (user && user.pushToken && Expo.isExpoPushToken(user.pushToken)) {
+
+                // Gói hàng chuẩn bị gửi
+                const messages: ExpoPushMessage[] = [{
+                    to: user.pushToken,
+                    sound: 'default',
+                    title: createData.title,
+                    body: createData.message,
+                    data: {
+                        type: createData.type,
+                        notificationId: savedNotif._id // Nhét ID thông báo vào đây để sau này click vào popup mở đúng màn hình
+                    },
+                }];
+
+                // Bóp cò gửi lên máy chủ Expo
+                const chunks = this.expo.chunkPushNotifications(messages);
+                for (const chunk of chunks) {
+                    await this.expo.sendPushNotificationsAsync(chunk);
+                }
+                this.logger.log(` Đã bắn Push Notification tới nhân viên: ${user.name}`);
+            } else {
+                this.logger.warn(` Nhân viên ID ${createData.userId} chưa cài app hoặc token không hợp lệ.`);
+            }
+        } catch (error) {
+            this.logger.error(`Lỗi khi bắn Push Notification:`, error);
+        }
+
+        return savedNotif; // Vẫn trả về data cho API hoặc hàm gọi nó
+    }
+
+    // 2. Lấy danh sách thông báo của 1 user (Sắp xếp mới nhất lên đầu)
+    async findByUserId(userId: string) {
+        return this.notificationModel.find({ userId }).sort({ createdAt: -1 }).exec();
+    }
+
+    // 3. Đánh dấu 1 thông báo là đã đọc
+    async markAsRead(id: string) {
+        return this.notificationModel.findByIdAndUpdate(id, { isRead: true }, { new: true });
+    }
+
+    // 4. Đánh dấu TẤT CẢ thông báo của user là đã đọc
+    async markAllAsRead(userId: string) {
+        return this.notificationModel.updateMany({ userId, isRead: false }, { isRead: true });
+    }
+}

@@ -9,8 +9,8 @@ services:
       - mongo_data:/data/db
 
   backend:
-    build: ./server
-    container_name: attendance_api
+    build: .
+    container_name: attendance_api  
     ports:
       - "3000:3000"
     depends_on:

@@ -11,7 +11,11 @@ import {
 import { Server, Socket } from 'socket.io';
 import { MessagesService } from './messages.service';
 
-@WebSocketGateway({ cors: { origin: '*' } })
+@WebSocketGateway({
+    cors: { origin: '*' },
+    pingTimeout: 30000, // Đợi 30 giây mới ngắt kết nối nếu mất tín hiệu
+    pingInterval: 10000 // Cứ 10 giây kiểm tra "sức khỏe" kết nối một lần
+})
 export class MessagesGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @WebSocketServer()
     server: Server;
@@ -32,7 +36,7 @@ export class MessagesGateway implements OnGatewayConnection, OnGatewayDisconnect
         const userId = client.handshake.query.userId as string;
         const isAdmin = client.handshake.query.isAdmin === 'true';
 
-        if (userId && userId !== 'undefined') {
+        if (userId && userId !== 'undefined' && userId !== 'null') {
             this.activeUsers.set(userId, client.id);
 
             if (isAdmin) {

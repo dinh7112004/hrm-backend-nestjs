@@ -20,7 +20,7 @@ export class TasksService {
         try {
             await this.notificationsService.create({
                 userId: savedTask.assigneeId,
-                title: ' Công việc mới',
+                title: 'Công việc mới',
                 message: `Bạn vừa được giao việc: "${savedTask.title}". Hạn chót: ${new Date(savedTask.dueDate).toLocaleDateString('vi-VN')}`,
                 type: 'TASK'
             });

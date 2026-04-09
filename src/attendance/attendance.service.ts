@@ -59,7 +59,7 @@ export class AttendanceService {
             // 1. Gửi cho NHÂN VIÊN (App)
             await this.notificationsService.create({
                 userId: userId,
-                title: 'Vào ca thành công ✅',
+                title: 'Vào ca thành công',
                 message: savedRecord.status === 'PENDING'
                     ? `Yêu cầu làm online đang chờ sếp duyệt.`
                     : `Bạn đã bắt đầu ca làm lúc ${timeStr}.`,
@@ -69,7 +69,7 @@ export class AttendanceService {
             // 2. GỬI CHO ADMIN (Web) - Để chuông trên Web nổ tin
             await this.notificationsService.create({
                 userId: 'ADMIN', // Quy ước để hiện lên Web Admin
-                title: savedRecord.status === 'PENDING' ? '📩 Yêu cầu Online mới' : '🕒 Nhân viên vào ca',
+                title: savedRecord.status === 'PENDING' ? 'Yêu cầu Online mới' : 'Nhân viên vào ca',
                 message: savedRecord.status === 'PENDING'
                     ? `${userName} vừa yêu cầu làm Online/Tại nhà. Sếp xem duyệt nhé!`
                     : `${userName} đã check-in vào ca lúc ${timeStr}.`,
@@ -97,7 +97,7 @@ export class AttendanceService {
             // Thông báo cho nhân viên
             await this.notificationsService.create({
                 userId: String(savedRecord.userId._id || savedRecord.userId),
-                title: 'Ra ca thành công 👋',
+                title: 'Ra ca thành công',
                 message: `Bạn đã kết thúc ca làm lúc ${timeStr}. Hẹn gặp lại!`,
                 type: 'ATTENDANCE'
             });
@@ -126,7 +126,7 @@ export class AttendanceService {
             try {
                 await this.notificationsService.create({
                     userId: String(updated.userId),
-                    title: 'Yêu cầu được phê duyệt ✅',
+                    title: 'Yêu cầu được phê duyệt',
                     message: `Yêu cầu làm online của bạn đã được duyệt. Phản hồi: ${adminReply || 'Đã duyệt'}`,
                     type: 'ATTENDANCE'
                 });
@@ -156,7 +156,7 @@ export class AttendanceService {
                 try {
                     await this.notificationsService.create({
                         userId: String(record.userId),
-                        title: 'Yêu cầu được phê duyệt ✅',
+                        title: 'Yêu cầu được phê duyệt',
                         message: `Yêu cầu làm online của bạn đã được sếp duyệt hàng loạt.`,
                         type: 'ATTENDANCE'
                     });
@@ -265,10 +265,10 @@ export class AttendanceService {
         let message = '';
 
         if (currentHHmm === reminderStart) {
-            title = 'Sắp đến giờ làm rồi! ⏰';
+            title = 'Sắp đến giờ làm rồi!';
             message = 'Đừng quên điểm danh vào ca để bắt đầu ngày mới nhé!';
         } else if (currentHHmm === reminderEnd) {
-            title = 'Sắp hết giờ làm! 🏃';
+            title = 'Sắp hết giờ làm!';
             message = 'Chuẩn bị đồ đạc và đừng quên điểm danh ra ca nhé!';
         }
 
@@ -285,8 +285,50 @@ export class AttendanceService {
                 });
                 console.log(`[CronJob] Đã gửi nhắc nhở điểm danh lúc ${currentHHmm}`);
             } catch (e) {
-                console.log("Lỗi cronjob:", e.message);
+                console.log("Lỗi cronjob nhắc nhở:", e.message);
             }
+        }
+    }
+
+    @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT, { timeZone: 'Asia/Ho_Chi_Minh' })
+    async handleAutoCheckOut() {
+        try {
+            const todayEnd = new Date();
+            todayEnd.setHours(0, 0, 0, 0); // Đầu ngày hôm nay tức là đã qua 12h đêm ngày hôm qua
+
+            // Những ai chưa quét mặt ra về của ngày hôm qua
+            const openRecords = await this.attendanceModel.find({
+                checkOutTime: { $exists: false },
+                checkInTime: { $lt: todayEnd }
+            });
+
+            if (openRecords.length > 0) {
+                const config = await this.configService.getConfig();
+                let endH = 17, endM = 30; // Giờ tan làm mặc định là 17h30
+                if (config && config.endTime) {
+                    const [h, m] = config.endTime.split(':');
+                    endH = parseInt(h, 10);
+                    endM = parseInt(m, 10);
+                }
+
+                for (const record of openRecords) {
+                    const checkInDate = new Date(record.checkInTime);
+                    // Lấy chính ngày hôm đó lúc endH:endM để coi như lúc đó đi về
+                    checkInDate.setHours(endH, endM, 0, 0);
+
+                    // Tránh ca checkin muộn hơn cả endTime (Ví dụ đi làm lúc 18:00) thì chốt ca 23:59
+                    if (checkInDate.getTime() < record.checkInTime.getTime()) {
+                        checkInDate.setHours(23, 59, 59, 999);
+                    }
+
+                    record.checkOutTime = checkInDate;
+                    record.note = record.note ? record.note + ' (Hệ thống tự động chốt ra ca do quên)' : 'Hệ thống tự động chốt ra ca do quên';
+                    await record.save();
+                }
+                console.log(`[CronJob] Đã tự chốt hoàn tất ${openRecords.length} ca quên check-out.`);
+            }
+        } catch (e) {
+            console.log("Lỗi cronjob tự động checkout:", e.message);
         }
     }
 }

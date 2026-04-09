@@ -22,6 +22,15 @@ export class Notification {
     // Trạng thái đã đọc chưa
     @Prop({ default: false })
     isRead: boolean;
+
+
+    // Thêm vào trong class Notification
+    @Prop({ type: String })
+    senderId: string; // Lưu ID người gửi tin nhắn hoặc ID của đối tượng liên quan
+
+    @Prop({ type: String })
+    messageId: string;
+
 }
 
 export const NotificationSchema = SchemaFactory.createForClass(Notification);

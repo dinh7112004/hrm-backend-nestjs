@@ -5,13 +5,13 @@ export type MessageDocument = Message & Document;
 
 @Schema({ timestamps: true })
 export class Message {
-    @Prop({ required: true }) // Dùng String để nhận được cả "7", "admin", "Nv1"...
+    @Prop({ required: true })
     senderId: string;
 
     @Prop({ required: true })
     receiverId: string;
 
-    @Prop({ required: true })
+    @Prop({ default: '' }) // Cho phép text rỗng nếu chỉ gửi file
     text: string;
 
     @Prop({ default: false })
@@ -20,8 +20,20 @@ export class Message {
     @Prop({ default: false })
     isRead: boolean;
 
+    // --- THÊM TRƯỜNG LƯU FILE ---
+    @Prop({ required: false })
+    fileUrl?: string;
+
+    @Prop({ required: false })
+    fileName?: string;
+
+    @Prop({ required: false })
+    fileType?: string;
+
     createdAt?: Date;
     updatedAt?: Date;
+
+
 }
 
 export const MessageSchema = SchemaFactory.createForClass(Message);

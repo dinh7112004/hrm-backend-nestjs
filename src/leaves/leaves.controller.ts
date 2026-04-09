@@ -7,67 +7,63 @@ import {
   Patch,
   UseInterceptors,
   UploadedFile,
-  HttpException,
-  HttpStatus,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { v2 as cloudinary } from 'cloudinary';
-import * as streamifier from 'streamifier';
+import { diskStorage } from 'multer';
+import { extname } from 'path';
+import * as fs from 'fs'; // THÊM THƯ VIỆN NÀY ĐỂ XÓA FILE TẠM
 import { LeavesService } from './leaves.service';
-
-// ⚙️ Cấu hình Cloudinary (Tạm thời sếp có thể hardcode để test, nhưng khuyên sếp nên cho vào file .env)
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
+import { DriveService } from './drive.service';
 
 @Controller('leaves')
 export class LeavesController {
-  constructor(private readonly leavesService: LeavesService) {}
+  constructor(
+    private readonly leavesService: LeavesService,
+    private readonly driveService: DriveService,
+  ) { }
 
-  // API: Nhân viên gửi đơn CÓ KÈM FILE ẢNH -> BẮN LÊN CLOUD
   @Post()
-  @UseInterceptors(FileInterceptor('evidence')) // Không dùng diskStorage nữa, để nó lưu tạm vào RAM (buffer)
+  @UseInterceptors(FileInterceptor('evidence', {
+    storage: diskStorage({
+      destination: './uploads/leaves',
+      filename: (req, file, callback) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        const ext = extname(file.originalname) || '.jpg';
+        callback(null, `${uniqueSuffix}${ext}`);
+      }
+    })
+  }))
   async create(
     @Body() createLeaveDto: CreateLeaveDto,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile() file?: Express.Multer.File,
   ) {
-    // Nếu có ảnh, bắn lên Cloudinary trước
     if (file) {
       try {
-        const uploadResult = await new Promise((resolve, reject) => {
-          const uploadStream = cloudinary.uploader.upload_stream(
-            { folder: 'AppDiemDanh/Leaves' }, // Tự động tạo thư mục này trên Cloudinary
-            (error, result) => {
-              if (error)
-                return reject(new Error(error.message || 'Upload failed'));
-              resolve(result);
-            },
-          );
-          // Bắn dữ liệu ảnh (buffer) vào luồng upload
-          streamifier.createReadStream(file.buffer).pipe(uploadStream);
-        });
-
-        // Lấy cái link xịn sò từ Cloudinary gán vào DB (VD: https://res.cloudinary.com/...)
-        const result = uploadResult as CloudinaryUploadResult;
-        createLeaveDto.evidence = result.secure_url;
-      } catch (error) {
-        console.error('Lỗi upload ảnh:', error);
-        throw new HttpException(
-          'Không thể upload ảnh minh chứng',
-          HttpStatus.INTERNAL_SERVER_ERROR,
+        // 1. Up ảnh lên Google Drive
+        const driveUrl = await this.driveService.uploadFile(
+          file.path,
+          file.originalname,
+          file.mimetype,
         );
+
+        // 2. Lấy link Drive gán vào data lưu DB
+        createLeaveDto.evidence = driveUrl || `/uploads/leaves/${file.filename}`;
+
+        // 3. QUAN TRỌNG: Xóa file tạm ở máy chủ đi cho đỡ nặng ổ cứng
+        if (driveUrl && fs.existsSync(file.path)) {
+          fs.unlinkSync(file.path);
+          console.log(' Đã xóa file rác sau khi up Drive:', file.filename);
+        }
+      } catch (error) {
+        console.error(" Lỗi up ảnh lên Drive:", error);
+        // Nếu Drive sập tạm thời thì vẫn giữ link local làm backup
+        createLeaveDto.evidence = `/uploads/leaves/${file.filename}`;
       }
     }
 
-    // Lưu thông tin đơn (kèm cái link ảnh mới) xuống DB
     return this.leavesService.create(createLeaveDto);
   }
 
-  // ============================================
-  // CÁC API DƯỚI NÀY EM GIỮ NGUYÊN CODE CỦA SẾP
-  // ============================================
   @Get()
   findAll() {
     return this.leavesService.findAll();
@@ -84,13 +80,7 @@ export class LeavesController {
   }
 }
 
-// Type definitions
 interface CreateLeaveDto {
   evidence?: string;
-  [key: string]: any;
-}
-
-interface CloudinaryUploadResult {
-  secure_url: string;
   [key: string]: any;
 }

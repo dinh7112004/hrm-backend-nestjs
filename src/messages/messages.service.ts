@@ -11,29 +11,40 @@ export class MessagesService {
         private notificationsService: NotificationsService,
     ) { }
 
-    async createMessage(senderId: string, receiverId: string, text: string, isAdmin: boolean) {
-        // 1. Lưu tin nhắn vào Database
-        const newMessage = new this.messageModel({ senderId, receiverId, text, isAdmin });
+    async createMessage(
+        senderId: string,
+        receiverId: string,
+        text: string,
+        isAdmin: boolean,
+        fileData: { fileUrl: string; fileName: string; fileType: string } | null = null // Thêm tham số
+    ) {
+        const newMessage = new this.messageModel({
+            senderId,
+            receiverId,
+            text,
+            isAdmin,
+            ...(fileData && fileData) // Nối data file vào nếu có
+        });
         const savedMessage = await newMessage.save();
 
-        // 2. TỰ ĐỘNG BẮN THÔNG BÁO (PUSH)
+        let notifText = text || '📁 Đã gửi một tệp đính kèm';
         try {
             if (isAdmin) {
-                // --- TRƯỜNG HỢP: ADMIN NHẮN CHO NHÂN VIÊN ---
-                // Gửi thông báo đến App của nhân viên (receiverId cụ thể)
                 await this.notificationsService.create({
                     userId: receiverId,
-                    title: '💬 Phản hồi từ Quản lý',
-                    message: text.length > 50 ? text.substring(0, 47) + '...' : text,
+                    senderId: senderId,
+                    messageId: savedMessage._id.toString(), // <--- ĐÃ CHÈN DÒNG NÀY VÀO
+                    title: 'Phản hồi từ Quản lý',
+                    message: notifText.length > 50 ? notifText.substring(0, 47) + '...' : notifText,
                     type: 'CHAT'
                 });
             } else {
-                // --- TRƯỜNG HỢP: NHÂN VIÊN NHẮN CHO ADMIN ---
-                // Gửi thông báo lên quả chuông trên Web Admin (dùng quy ước 'ADMIN')
                 await this.notificationsService.create({
                     userId: 'ADMIN',
-                    title: '💬 Tin nhắn mới từ nhân viên',
-                    message: text.length > 50 ? text.substring(0, 47) + '...' : text,
+                    senderId: senderId,
+                    messageId: savedMessage._id.toString(), // <--- ĐÃ CHÈN DÒNG NÀY VÀO
+                    title: 'Tin nhắn mới từ nhân viên',
+                    message: notifText.length > 50 ? notifText.substring(0, 47) + '...' : notifText,
                     type: 'CHAT'
                 });
             }
@@ -47,16 +58,12 @@ export class MessagesService {
     async getMessages(employeeId: string) {
         return this.messageModel
             .find({
-                $or: [
-                    { senderId: employeeId },
-                    { receiverId: employeeId },
-                ],
+                $or: [{ senderId: employeeId }, { receiverId: employeeId }],
             })
             .sort({ createdAt: 1 })
             .exec();
     }
 
-    // --- HÀM MỚI 1: Lấy tin cuối và đếm số tin chưa đọc cho danh sách bên trái ---
     async getSummaryForEmployees(employeeIds: string[]) {
         return Promise.all(
             employeeIds.map(async (id) => {
@@ -73,7 +80,7 @@ export class MessagesService {
 
                 return {
                     employeeId: id,
-                    lastMessage: lastMsg ? lastMsg.text : 'Chưa có tin nhắn',
+                    lastMessage: lastMsg ? (lastMsg.text || '📁 Tệp đính kèm') : 'Chưa có tin nhắn',
                     lastTime: lastMsg ? lastMsg.createdAt : null,
                     unreadCount: unreadCount,
                 };
@@ -81,7 +88,6 @@ export class MessagesService {
         );
     }
 
-    // --- HÀM MỚI 2: Đánh dấu đã đọc khi Admin bấm vào xem chat ---
     async markAsRead(employeeId: string) {
         return this.messageModel.updateMany(
             { senderId: employeeId, isAdmin: false, isRead: false },

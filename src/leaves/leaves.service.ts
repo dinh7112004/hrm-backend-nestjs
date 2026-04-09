@@ -24,7 +24,7 @@ export class LeavesService {
             // --- VẾ 1: Bắn cho NHÂN VIÊN (Người gửi đơn) ---
             await this.notificationsService.create({
                 userId: String(saved.userId._id || saved.userId),
-                title: ' Đã gửi đơn nghỉ phép',
+                title: 'Đã gửi đơn nghỉ phép',
                 message: `Đơn xin nghỉ ngày ${formattedDate} đã được gửi thành công. Đang chờ sếp duyệt nhé!`,
                 type: 'LEAVE'
             });
@@ -36,7 +36,7 @@ export class LeavesService {
 
             await this.notificationsService.create({
                 userId: 'ADMIN', // Quy ước chung để hiện lên chuông Web Admin
-                title: ' Có đơn xin nghỉ mới',
+                title: 'Có đơn xin nghỉ mới',
                 message: `${empName} vừa gửi đơn xin nghỉ ngày ${formattedDate}. Click để xem chi tiết!`,
                 type: 'LEAVE'
             });
@@ -79,7 +79,7 @@ export class LeavesService {
 
             await this.notificationsService.create({
                 userId: String(leave.userId._id || leave.userId),
-                title: ' Kết quả duyệt đơn nghỉ',
+                title: 'Kết quả duyệt đơn nghỉ',
                 message: `Đơn nghỉ ngày ${formattedDate} của bạn đã ${statusText}.`,
                 type: 'LEAVE'
             });

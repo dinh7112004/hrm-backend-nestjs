@@ -16,45 +16,43 @@ export class NotificationsService {
     ) { }
 
     // 1. Tạo thông báo mới (Lưu DB + Bắn Ting ting)
-    async create(createData: { userId: string; title: string; message: string; type?: string }) {
-        // A. Lưu thông báo vào Database (Để hiện trong chuông thông báo)
+    // Tìm đến hàm create và thay thế toàn bộ bằng đoạn này:
+    async create(createData: { userId: string; title: string; message: string; type?: string; senderId?: string; messageId?: string }) {
+        // A. Lưu thông báo vào Database
         const newNotif = new this.notificationModel(createData);
         const savedNotif = await newNotif.save();
 
         // B. Bắn Push Notification ra màn hình khóa
         try {
-            // Lấy thông tin nhân viên từ Database
-            const user = await this.usersService.findOne(createData.userId);
+            if (createData.userId !== 'ADMIN') {
+                const user = await this.usersService.findOne(createData.userId);
 
-            // Kiểm tra xem nhân viên có mã pushToken hợp lệ không
-            if (user && user.pushToken && Expo.isExpoPushToken(user.pushToken)) {
+                if (user && user.pushToken && Expo.isExpoPushToken(user.pushToken)) {
+                    const messages: ExpoPushMessage[] = [{
+                        to: user.pushToken,
+                        sound: 'default',
+                        title: createData.title,
+                        body: createData.message,
+                        data: {
+                            type: createData.type,
+                            senderId: createData.senderId,
+                            messageId: createData.messageId,
+                            notificationId: savedNotif._id
+                        },
+                    }];
 
-                // Gói hàng chuẩn bị gửi
-                const messages: ExpoPushMessage[] = [{
-                    to: user.pushToken,
-                    sound: 'default',
-                    title: createData.title,
-                    body: createData.message,
-                    data: {
-                        type: createData.type,
-                        notificationId: savedNotif._id // Nhét ID thông báo vào đây để sau này click vào popup mở đúng màn hình
-                    },
-                }];
-
-                // Bóp cò gửi lên máy chủ Expo
-                const chunks = this.expo.chunkPushNotifications(messages);
-                for (const chunk of chunks) {
-                    await this.expo.sendPushNotificationsAsync(chunk);
+                    const chunks = this.expo.chunkPushNotifications(messages);
+                    for (const chunk of chunks) {
+                        await this.expo.sendPushNotificationsAsync(chunk);
+                    }
+                    this.logger.log(` Đã bắn Push Notification tới: ${user.name}`);
                 }
-                this.logger.log(` Đã bắn Push Notification tới nhân viên: ${user.name}`);
-            } else {
-                this.logger.warn(` Nhân viên ID ${createData.userId} chưa cài app hoặc token không hợp lệ.`);
             }
         } catch (error) {
             this.logger.error(`Lỗi khi bắn Push Notification:`, error);
         }
 
-        return savedNotif; // Vẫn trả về data cho API hoặc hàm gọi nó
+        return savedNotif;
     }
 
     // 2. Lấy danh sách thông báo của 1 user (Sắp xếp mới nhất lên đầu)

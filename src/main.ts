@@ -2,6 +2,14 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
+import * as fs from 'fs';
+
+// Tự động tạo thư mục uploads/leaves nếu chưa có
+const uploadsDir = join(process.cwd(), 'uploads', 'leaves');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  console.log('✅ Đã tạo thư mục uploads/leaves');
+}
 
 async function bootstrap() {
   // 1. Khởi tạo App với kiểu NestExpressApplication

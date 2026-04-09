@@ -3,16 +3,45 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Leave } from './schemas/leave.schema';
 import { NotificationsService } from '../notifications/notifications.service';
+import { DriveService } from './drive.service';
+import * as fs from 'fs';
 
 @Injectable()
 export class LeavesService {
     constructor(
         @InjectModel(Leave.name) private leaveModel: Model<Leave>,
-        private notificationsService: NotificationsService, // Tiêm máy bắn thông báo
+        private notificationsService: NotificationsService,
+        private driveService: DriveService,
     ) { }
 
     // 1. Nhân viên tạo đơn xin nghỉ
-    async create(createLeaveDto: any) {
+    async create(createLeaveDto: any, file?: Express.Multer.File) {
+        // --- XỬ LÝ UPLOAD ẢNH LÊN GOOGLE DRIVE ---
+        if (file) {
+            try {
+                // Đẩy lên Drive và nhận về cái LINK (dạng string)
+                const driveLink = await this.driveService.uploadFile(
+                    file.path,
+                    file.originalname,
+                    file.mimetype
+                );
+
+                if (driveLink) {
+                    // Gán thẳng link vào field evidence (Khớp với Controller và Schema của ông)
+                    createLeaveDto.evidence = driveLink;
+
+                    // Xóa file tạm ở thư mục uploads/ trên server Render
+                    if (fs.existsSync(file.path)) {
+                        fs.unlinkSync(file.path);
+                    }
+                    console.log("✅ Đã đẩy ảnh lên Drive và dọn dẹp file tạm!");
+                }
+            } catch (error) {
+                console.error("❌ Lỗi upload Google Drive:", error.message);
+                // Nếu lỗi, link local vẫn tồn tại trong DTO từ lúc ở Controller
+            }
+        }
+
         // Lưu đơn vào database
         const newLeave = new this.leaveModel(createLeaveDto);
         const saved = await (await newLeave.save()).populate('userId', 'name');
@@ -21,7 +50,7 @@ export class LeavesService {
         try {
             const formattedDate = new Date(saved.startDate).toLocaleDateString('vi-VN');
 
-            // --- VẾ 1: Bắn cho NHÂN VIÊN (Người gửi đơn) ---
+            // Bắn cho Nhân viên
             await this.notificationsService.create({
                 userId: String(saved.userId._id || saved.userId),
                 title: 'Đã gửi đơn nghỉ phép',
@@ -29,21 +58,18 @@ export class LeavesService {
                 type: 'LEAVE'
             });
 
-            // --- VẾ 2: Bắn cho ADMIN (Để hiện lên quả chuông Web Admin) ---
-            // Sếp lưu ý: saved.userId.name chỉ có nếu populate thành công, 
-            // nếu không sếp có thể dùng createLeaveDto.userName nếu sếp có gửi kèm từ App
+            // Bắn cho Admin
             const empName = (saved.userId as any)?.name || "Một nhân viên";
-
             await this.notificationsService.create({
-                userId: 'ADMIN', // Quy ước chung để hiện lên chuông Web Admin
+                userId: 'ADMIN',
                 title: 'Có đơn xin nghỉ mới',
                 message: `${empName} vừa gửi đơn xin nghỉ ngày ${formattedDate}. Click để xem chi tiết!`,
                 type: 'LEAVE'
             });
 
-            console.log(" Đã bắn thông báo cho cả Nhân viên và Admin thành công!");
+            console.log("🚀 Đã bắn thông báo thành công!");
         } catch (e) {
-            console.log(" Lỗi gửi thông báo khi tạo đơn:", e.message);
+            console.log("⚠️ Lỗi gửi thông báo:", e.message);
         }
 
         return saved;
@@ -69,7 +95,6 @@ export class LeavesService {
 
         if (!leave) throw new NotFoundException('Không tìm thấy đơn xin nghỉ');
 
-        // TỰ ĐỘNG BẮN THÔNG BÁO TRẢ KẾT QUẢ CHO NHÂN VIÊN
         try {
             const statusText = status === 'APPROVED' ? 'được CHẤP THUẬN ' : 'bị TỪ CHỐI ';
             const dateObj = new Date(leave.startDate);
@@ -83,10 +108,8 @@ export class LeavesService {
                 message: `Đơn nghỉ ngày ${formattedDate} của bạn đã ${statusText}.`,
                 type: 'LEAVE'
             });
-
-            console.log(` Đã báo tin kết quả duyệt cho nhân viên ${leave.userId}`);
         } catch (e) {
-            console.log(" Lỗi gửi thông báo cập nhật trạng thái:", e.message);
+            console.log("⚠️ Lỗi gửi thông báo kết quả duyệt:", e.message);
         }
 
         return leave;

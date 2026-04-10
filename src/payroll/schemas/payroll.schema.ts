@@ -30,6 +30,10 @@ export class Payroll extends Document {
 
     @Prop({ default: 0 })
     netSalary: number; // Lương thực nhận cuối cùng
+
+    @Prop()
+    actualWorkHours: number; // Thêm trường này để lưu tổng số giờ
 }
+
 
 export const PayrollSchema = SchemaFactory.createForClass(Payroll);

@@ -3,6 +3,7 @@ import { AppModule } from './app.module';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
 import * as fs from 'fs';
+import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger'; // 1. Import Swagger
 
 // Tự động tạo thư mục uploads/leaves nếu chưa có
 const uploadsDir = join(process.cwd(), 'uploads', 'leaves');
@@ -12,37 +13,42 @@ if (!fs.existsSync(uploadsDir)) {
 }
 
 async function bootstrap() {
-  // 1. Khởi tạo App với kiểu NestExpressApplication
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
-  // 2. Cấu hình CORS mở rộng - Cho phép Web Admin và Mobile truy cập
+  // 2. Cấu hình CORS
   app.enableCors({
     origin: '*',
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
   });
 
-  /**
-   * 3. CẤU HÌNH PHỤC VỤ FILE TĨNH (STATIC ASSETS)
-   * Sử dụng join(__dirname, '..') để lấy đường dẫn tuyệt đối từ thư mục src/ ra ngoài root
-   * Điều này đảm bảo NestJS luôn nhìn thấy folder /uploads
-   */
-  const rootPath = join(__dirname, '..');
+  // 3. Cấu hình Swagger (Tài liệu API)
+  const config = new DocumentBuilder()
+    .setTitle('Hệ Thống API App Điểm Danh')
+    .setDescription('Tài liệu hướng dẫn sử dụng các Endpoint cho Mobile và Web Admin')
+    .setVersion('1.0')
+    .addBearerAuth() // Cho phép nhập Token để test API nếu có bảo mật JWT
+    .build();
 
+  const document = SwaggerModule.createDocument(app, config);
+  // Đường dẫn truy cập tài liệu sẽ là: domain.com/api-docs
+  SwaggerModule.setup('api-docs', app, document);
+
+  // 4. Cấu hình phục vụ file tĩnh
+  const rootPath = join(__dirname, '..');
   app.useStaticAssets(rootPath, {
-    prefix: '/', // Để trống prefix vì trong DB bạn đã lưu là "/uploads/leaves/..."
+    prefix: '/',
     index: false,
     setHeaders: (res) => {
-      // Các headers này giúp vượt qua cơ chế bảo mật khắt khe của trình duyệt và Ngrok
       res.set('Access-Control-Allow-Origin', '*');
       res.set('Cross-Origin-Resource-Policy', 'cross-origin');
     },
   });
 
+  const port = process.env.PORT || 3000;
+  await app.listen(port, '0.0.0.0');
 
-
-const port = process.env.PORT || 3000; // Nó sẽ lấy cổng của Render, nếu không có thì lấy 3000
-await app.listen(port, '0.0.0.0'); // Thêm '0.0.0.0' để Render nó tìm thấy server của sếp
-console.log(`Server đang chạy tại cổng: ${port}`);
+  console.log(`🚀 Server đang chạy tại cổng: ${port}`);
+  console.log(`📄 Tài liệu API (Swagger): http://localhost:${port}/api-docs`);
 }
 bootstrap();

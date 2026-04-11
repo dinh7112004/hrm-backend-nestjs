@@ -22,17 +22,29 @@ export class Payroll extends Document {
     @Prop({ default: 0 })
     bonus: number; // Thưởng
 
+    @Prop({ default: [] })
+    bonusDetails: { reason: string, amount: number, date: Date }[];
+
     @Prop({ default: 0 })
     fine: number; // Phạt
+
+    @Prop({ default: [] })
+    fineDetails: { reason: string, amount: number, date: Date }[];
 
     @Prop({ default: 0 })
     allowance: number; // Phụ cấp
 
     @Prop({ default: 0 })
-    netSalary: number; // Lương thực nhận cuối cùng
+    netSalary: number; // Lương thực nhận theo giờ làm
+
+    @Prop({ default: 0 })
+    netSalaryFull: number; // Lương thực nhận theo lương cơ bản (Full)
 
     @Prop()
     actualWorkHours: number; // Thêm trường này để lưu tổng số giờ
+
+    @Prop({ default: 'PENDING', enum: ['PENDING', 'CHECKED', 'PAID'] })
+    status: string; // Trạng thái: Chờ duyệt, Đã kiểm tra, Đã thanh toán
 }
 
 

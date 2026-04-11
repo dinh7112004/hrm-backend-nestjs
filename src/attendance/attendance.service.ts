@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, Inject, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Cron, CronExpression } from '@nestjs/schedule';
@@ -6,6 +6,7 @@ import { Attendance } from './schemas/attendance.schema';
 import { ConfigService } from '../app-config/config.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { User } from '../user/schemas/user.schema';
+import { PayrollService } from '../payroll/payroll.service';
 
 @Injectable()
 export class AttendanceService {
@@ -14,6 +15,8 @@ export class AttendanceService {
         @InjectModel(User.name) private userModel: Model<User>,
         private configService: ConfigService,
         private notificationsService: NotificationsService,
+        @Inject(forwardRef(() => PayrollService))
+        private payrollService: PayrollService,
     ) { }
 
     private getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
@@ -49,14 +52,10 @@ export class AttendanceService {
 
         const savedRecord = await (await newRecord.save()).populate('userId', 'name');
 
-        // ==========================================
-        // LOGIC BẮN THÔNG BÁO (CẬP NHẬT CHO ADMIN)
-        // ==========================================
         try {
             const timeStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
             const userName = (savedRecord.userId as any)?.name || 'Nhân viên';
 
-            // 1. Gửi cho NHÂN VIÊN (App)
             await this.notificationsService.create({
                 userId: userId,
                 title: 'Vào ca thành công',
@@ -66,9 +65,8 @@ export class AttendanceService {
                 type: 'ATTENDANCE'
             });
 
-            // 2. GỬI CHO ADMIN (Web) - Để chuông trên Web nổ tin
             await this.notificationsService.create({
-                userId: 'ADMIN', // Quy ước để hiện lên Web Admin
+                userId: 'ADMIN',
                 title: savedRecord.status === 'PENDING' ? 'Yêu cầu Online mới' : 'Nhân viên vào ca',
                 message: savedRecord.status === 'PENDING'
                     ? `${userName} vừa yêu cầu làm Online/Tại nhà. Sếp xem duyệt nhé!`
@@ -89,12 +87,10 @@ export class AttendanceService {
         if (distance) record.distance = distance;
         const savedRecord = await record.save();
 
-        // --- GỬI THÔNG BÁO ---
         try {
             const timeStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
             const userName = (savedRecord.userId as any)?.name || 'Nhân viên';
 
-            // Thông báo cho nhân viên
             await this.notificationsService.create({
                 userId: String(savedRecord.userId._id || savedRecord.userId),
                 title: 'Ra ca thành công',
@@ -102,7 +98,6 @@ export class AttendanceService {
                 type: 'ATTENDANCE'
             });
 
-            // Gửi cho ADMIN (Web) để biết nhân viên đã về
             await this.notificationsService.create({
                 userId: 'ADMIN',
                 title: 'Nhân viên ra ca',
@@ -114,7 +109,6 @@ export class AttendanceService {
         return savedRecord;
     }
 
-    // Các hàm khác giữ nguyên logic duyệt của sếp...
     async approveSingle(id: string, adminReply?: string) {
         const updated = await this.attendanceModel.findByIdAndUpdate(
             id,
@@ -123,6 +117,10 @@ export class AttendanceService {
         );
 
         if (updated) {
+            const m = (updated.checkInTime.getMonth() + 1).toString().padStart(2, '0');
+            const y = updated.checkInTime.getFullYear();
+            await this.payrollService.calculateMonthlyPayroll(String(updated.userId), `${m}-${y}`);
+
             try {
                 await this.notificationsService.create({
                     userId: String(updated.userId),
@@ -151,22 +149,39 @@ export class AttendanceService {
             { status: 'APPROVED', note: 'Sếp đã duyệt làm online' }
         );
 
-        if (pendingRecords.length > 0) {
-            pendingRecords.forEach(async (record) => {
-                try {
-                    await this.notificationsService.create({
-                        userId: String(record.userId),
-                        title: 'Yêu cầu được phê duyệt',
-                        message: `Yêu cầu làm online của bạn đã được sếp duyệt hàng loạt.`,
-                        type: 'ATTENDANCE'
-                    });
-                } catch (e) {
-                    console.log(`Lỗi gửi thông báo cho user ${record.userId}:`, e.message);
-                }
-            });
+        for (const record of pendingRecords) {
+            const m = (record.checkInTime.getMonth() + 1).toString().padStart(2, '0');
+            const y = record.checkInTime.getFullYear();
+            await this.payrollService.calculateMonthlyPayroll(String(record.userId), `${m}-${y}`);
+            
+            try {
+                await this.notificationsService.create({
+                    userId: String(record.userId),
+                    title: 'Yêu cầu được phê duyệt',
+                    message: `Yêu cầu làm online của bạn đã được sếp duyệt hàng loạt.`,
+                    type: 'ATTENDANCE'
+                });
+            } catch (e) {
+                console.log(`Lỗi gửi thông báo cho user ${record.userId}:`, e.message);
+            }
         }
 
         return result;
+    }
+
+    async deleteAttendance(id: string) {
+        const record = await this.attendanceModel.findById(id);
+        if (!record) throw new NotFoundException('Không tìm thấy bản ghi điểm danh!');
+
+        const userId = String(record.userId);
+        const m = (record.checkInTime.getMonth() + 1).toString().padStart(2, '0');
+        const y = record.checkInTime.getFullYear();
+
+        await this.attendanceModel.findByIdAndDelete(id);
+
+        await this.payrollService.calculateMonthlyPayroll(userId, `${m}-${y}`);
+
+        return { message: 'Đã xóa điểm danh và tính toán lại lương thành công' };
     }
 
     async getMonthlyReport(month: number, year: number) {
@@ -214,11 +229,31 @@ export class AttendanceService {
         const finalResult = Array.from(reportMap.values()).map(user => {
             let approvedCount = 0;
             let lateCount = 0;
+            let totalHoursWorked = 0;
+
             Object.values(user.days).forEach((d: any) => {
                 if (d.status === 'APPROVED') approvedCount++;
                 if (d.isLate) lateCount++;
+
+                if (d.checkIn && d.checkOut) {
+                    const inTime = new Date(d.checkIn).getTime();
+                    const outTime = new Date(d.checkOut).getTime();
+                    let hours = (outTime - inTime) / (1000 * 60 * 60);
+                    if (hours > 5) {
+                        hours -= 1.5;
+                    }
+                    if (hours > 0) {
+                        totalHoursWorked += hours;
+                    }
+                }
             });
-            return { ...user, totalApproved: approvedCount, totalLate: lateCount };
+
+            return {
+                ...user,
+                totalApproved: approvedCount,
+                totalLate: lateCount,
+                totalHours: Number(totalHoursWorked.toFixed(2))
+            };
         });
 
         return finalResult;
@@ -283,7 +318,6 @@ export class AttendanceService {
                         type: 'ATTENDANCE'
                     });
                 });
-                console.log(`[CronJob] Đã gửi nhắc nhở điểm danh lúc ${currentHHmm}`);
             } catch (e) {
                 console.log("Lỗi cronjob nhắc nhở:", e.message);
             }
@@ -294,9 +328,8 @@ export class AttendanceService {
     async handleAutoCheckOut() {
         try {
             const todayEnd = new Date();
-            todayEnd.setHours(0, 0, 0, 0); // Đầu ngày hôm nay tức là đã qua 12h đêm ngày hôm qua
+            todayEnd.setHours(0, 0, 0, 0);
 
-            // Những ai chưa quét mặt ra về của ngày hôm qua
             const openRecords = await this.attendanceModel.find({
                 checkOutTime: { $exists: false },
                 checkInTime: { $lt: todayEnd }
@@ -304,7 +337,7 @@ export class AttendanceService {
 
             if (openRecords.length > 0) {
                 const config = await this.configService.getConfig();
-                let endH = 17, endM = 30; // Giờ tan làm mặc định là 17h30
+                let endH = 17, endM = 30;
                 if (config && config.endTime) {
                     const [h, m] = config.endTime.split(':');
                     endH = parseInt(h, 10);
@@ -313,19 +346,14 @@ export class AttendanceService {
 
                 for (const record of openRecords) {
                     const checkInDate = new Date(record.checkInTime);
-                    // Lấy chính ngày hôm đó lúc endH:endM để coi như lúc đó đi về
                     checkInDate.setHours(endH, endM, 0, 0);
-
-                    // Tránh ca checkin muộn hơn cả endTime (Ví dụ đi làm lúc 18:00) thì chốt ca 23:59
                     if (checkInDate.getTime() < record.checkInTime.getTime()) {
                         checkInDate.setHours(23, 59, 59, 999);
                     }
-
                     record.checkOutTime = checkInDate;
                     record.note = record.note ? record.note + ' (Hệ thống tự động chốt ra ca do quên)' : 'Hệ thống tự động chốt ra ca do quên';
                     await record.save();
                 }
-                console.log(`[CronJob] Đã tự chốt hoàn tất ${openRecords.length} ca quên check-out.`);
             }
         } catch (e) {
             console.log("Lỗi cronjob tự động checkout:", e.message);

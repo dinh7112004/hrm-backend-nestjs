@@ -128,14 +128,22 @@ export class PayrollService {
         // 5. Thưởng / Phạt
         const adjustments = await this.adjustmentModel.find({
             userId,
-            createdAt: { $gte: startOfMonth, $lte: endOfMonth }
+            date: { $gte: startOfMonth, $lte: endOfMonth }
         });
-        const totalBonus = adjustments.filter(a => a.type === 'BONUS').reduce((sum, item) => sum + item.amount, 0);
-        const totalFine = adjustments.filter(a => a.type === 'FINE').reduce((sum, item) => sum + item.amount, 0);
+        
+        const bonusItems = adjustments.filter(a => a.type === 'BONUS');
+        const fineItems = adjustments.filter(a => a.type === 'FINE');
+
+        const totalBonus = bonusItems.reduce((sum, item) => sum + item.amount, 0);
+        const totalFine = fineItems.reduce((sum, item) => sum + item.amount, 0);
+
+        const bonusDetails = bonusItems.map(a => ({ reason: a.reason, amount: a.amount, date: a.date }));
+        const fineDetails = fineItems.map(a => ({ reason: a.reason, amount: a.amount, date: a.date }));
 
         // 6. Chốt Lương NET
         const salaryPerHour = standardWorkHours > 0 ? (baseSalary / standardWorkHours) : 0;
         const netSalary = Math.round((totalValidHours * salaryPerHour) + totalBonus - totalFine);
+        const netSalaryFull = baseSalary + totalBonus - totalFine;
 
         const actualWorkDays = Math.round((totalValidHours / 8) * 100) / 100;
 
@@ -147,12 +155,15 @@ export class PayrollService {
                 actualWorkDays,
                 actualWorkHours: totalValidHours,
                 bonus: totalBonus,
+                bonusDetails,
                 fine: totalFine,
+                fineDetails,
                 netSalary,
+                netSalaryFull,
                 standardWorkDays
             },
             { upsert: true, new: true }
-        );
+        ).populate('userId', 'name email baseSalary phone');
     }
 
     async createAdjustment(data: any) { return new this.adjustmentModel(data).save(); }
@@ -163,11 +174,15 @@ export class PayrollService {
         const endOfMonth = new Date(parseInt(y), parseInt(m), 0, 23, 59, 59);
         return this.adjustmentModel.find({
             userId,
-            createdAt: { $gte: startOfMonth, $lte: endOfMonth }
-        }).sort({ createdAt: -1 });
+            date: { $gte: startOfMonth, $lte: endOfMonth }
+        }).sort({ date: -1 });
     }
 
 
+
+    async updateStatus(id: string, status: string) {
+        return this.payrollModel.findByIdAndUpdate(id, { status }, { new: true }).populate('userId', 'name email baseSalary phone');
+    }
 
     async getPayrollByMonth(month: string) {
         return this.payrollModel.find({ month }).populate('userId', 'name email baseSalary phone');

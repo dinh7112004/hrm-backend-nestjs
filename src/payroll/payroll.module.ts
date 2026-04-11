@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { PayrollController } from './payroll.controller';
 import { PayrollService } from './payroll.service';
@@ -16,10 +16,10 @@ import { AppConfig, AppConfigSchema } from '../app-config/schemas/config.schema'
         MongooseModule.forFeature([
             { name: Payroll.name, schema: PayrollSchema },
             { name: PayrollAdjustment.name, schema: PayrollAdjustmentSchema },
-            { name: Leave.name, schema: LeaveSchema },       // <--- THÊM BẢNG NGHỈ PHÉP
-            { name: AppConfig.name, schema: AppConfigSchema } // <--- THÊM BẢNG CẤU HÌNH
+            { name: Leave.name, schema: LeaveSchema },
+            { name: AppConfig.name, schema: AppConfigSchema }
         ]),
-        AttendanceModule,
+        forwardRef(() => AttendanceModule),
         UsersModule,
     ],
     controllers: [PayrollController],

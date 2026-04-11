@@ -1,5 +1,5 @@
 // /src/payroll/payroll.controller.ts
-import { Controller, Get, Post, Body, Query, Delete, Param } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, Delete, Param, Patch } from '@nestjs/common';
 import { PayrollService } from './payroll.service';
 
 @Controller('payroll')
@@ -34,5 +34,11 @@ export class PayrollController {
     @Get('adjustments/:userId')
     async getAdjustments(@Param('userId') userId: string, @Query('month') month: string) {
         return this.payrollService.getAdjustmentsByUser(userId, month);
+    }
+
+    // 5. API: Cập nhật trạng thái (Checked, Paid...)
+    @Patch('status/:id')
+    async updateStatus(@Param('id') id: string, @Body('status') status: string) {
+        return this.payrollService.updateStatus(id, status);
     }
 }

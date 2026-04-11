@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Put, Ip, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Put, Ip, Param, Query, Delete } from '@nestjs/common';
 import { AttendanceService } from './attendance.service';
 
 @Controller('attendance')
@@ -66,5 +66,8 @@ export class AttendanceController {
         return this.attendanceService.getMonthlyReport(m, y);
     }
 
-
+    @Delete(':id')
+    async deleteAttendance(@Param('id') id: string) {
+        return this.attendanceService.deleteAttendance(id);
+    }
 }

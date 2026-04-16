@@ -41,4 +41,11 @@ export class PayrollController {
     async updateStatus(@Param('id') id: string, @Body('status') status: string) {
         return this.payrollService.updateStatus(id, status);
     }
+
+    // 6. API: Dành cho Mobile App lấy lương của chính mình
+    @Get('mobile-data')
+    async getPayrollByUser(@Query('userId') userId: string, @Query('month') month: string) {
+        if (!userId || !month) return null;
+        return this.payrollService.calculateMonthlyPayroll(userId, month);
+    }
 }

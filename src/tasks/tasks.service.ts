@@ -61,7 +61,7 @@ export class TasksService {
         const updatedTask = await this.taskModel.findByIdAndUpdate(
             id,
             updateData,
-            { new: true }
+            { returnDocument: 'after' }
         );
 
         if (!updatedTask) throw new NotFoundException('Không tìm thấy Task!');

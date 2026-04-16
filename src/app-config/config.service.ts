@@ -18,6 +18,6 @@ export class ConfigService {
 
     // Cập nhật cấu hình mới từ Web Admin
     async updateConfig(updateData: any) {
-        return this.configModel.findOneAndUpdate({}, updateData, { new: true, upsert: true });
+        return this.configModel.findOneAndUpdate({}, updateData, { returnDocument: 'after', upsert: true });
     }
 }

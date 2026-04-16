@@ -32,6 +32,8 @@ export class User extends Document {
     @Prop({ default: 0 })
     baseSalary: number;
 
+    @Prop({ default: 96 }) // Tổng phép tính theo giờ (12 ngày * 8h = 96h)
+    leaveBalance: number;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);   

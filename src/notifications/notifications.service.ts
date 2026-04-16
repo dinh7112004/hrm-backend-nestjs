@@ -62,7 +62,7 @@ export class NotificationsService {
 
     // 3. Đánh dấu 1 thông báo là đã đọc
     async markAsRead(id: string) {
-        return this.notificationModel.findByIdAndUpdate(id, { isRead: true }, { new: true });
+        return this.notificationModel.findByIdAndUpdate(id, { isRead: true }, { returnDocument: 'after' });
     }
 
     // 4. Đánh dấu TẤT CẢ thông báo của user là đã đọc

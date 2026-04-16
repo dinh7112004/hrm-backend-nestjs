@@ -70,4 +70,13 @@ export class AttendanceController {
     async deleteAttendance(@Param('id') id: string) {
         return this.attendanceService.deleteAttendance(id);
     }
+
+    // API lấy danh sách chấm công của 1 nhân viên theo tháng
+    @Get('user/:userId')
+    async getByUser(
+        @Param('userId') userId: string,
+        @Query('month') month: string // dạng MM-YYYY
+    ) {
+        return this.attendanceService.getByUserAndMonth(userId, month);
+    }
 }

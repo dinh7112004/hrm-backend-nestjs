@@ -184,6 +184,68 @@ export class AttendanceService {
         return { message: 'Đã xóa điểm danh và tính toán lại lương thành công' };
     }
 
+    async getByUserAndMonth(userId: string, month: string) {
+        let startOfMonth: Date;
+        let endOfMonth: Date;
+
+        if (month) {
+            const [mStr, yStr] = month.split('-');
+            const m = parseInt(mStr);
+            const y = parseInt(yStr);
+            startOfMonth = new Date(y, m - 1, 1);
+            endOfMonth = new Date(y, m, 0, 23, 59, 59);
+        } else {
+            const now = new Date();
+            startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+            endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+        }
+
+        const records = await this.attendanceModel.find({
+            userId,
+            checkInTime: { $gte: startOfMonth, $lte: endOfMonth }
+        }).sort({ checkInTime: 1 }).lean();
+
+        // Tính giờ làm cho mỗi ca
+        const config = await this.configService.getConfig();
+        const shiftStart = config.startTime || '08:00';
+        const shiftEnd = config.endTime || '17:30';
+
+        return records.map(r => {
+            let workedHours = 0;
+            if (r.checkInTime && r.checkOutTime) {
+                const checkIn = new Date(r.checkInTime);
+                const checkOut = new Date(r.checkOutTime);
+                const [sH, sM] = shiftStart.split(':').map(Number);
+                const [eH, eM] = shiftEnd.split(':').map(Number);
+
+                const shiftS = new Date(checkIn); shiftS.setHours(sH, sM, 0, 0);
+                const shiftE = new Date(checkIn); shiftE.setHours(eH, eM, 0, 0);
+                const lunchS = new Date(checkIn); lunchS.setHours(12, 0, 0, 0);
+                const lunchE = new Date(checkIn); lunchE.setHours(13, 30, 0, 0);
+
+                const validStart = checkIn < shiftS ? shiftS : checkIn;
+                const validEnd = checkOut > shiftE ? shiftE : checkOut;
+
+                if (validEnd > validStart) {
+                    let totalMs = validEnd.getTime() - validStart.getTime();
+                    const overlapS = validStart > lunchS ? validStart : lunchS;
+                    const overlapE = validEnd < lunchE ? validEnd : lunchE;
+                    if (overlapS < overlapE) totalMs -= (overlapE.getTime() - overlapS.getTime());
+                    workedHours = Math.round((totalMs / (1000 * 60 * 60)) * 100) / 100;
+                }
+            }
+            return {
+                _id: r._id,
+                checkInTime: r.checkInTime,
+                checkOutTime: r.checkOutTime,
+                status: r.status,
+                type: r.type,
+                note: r.note,
+                workedHours
+            };
+        });
+    }
+
     async getMonthlyReport(month: number, year: number) {
         const startDate = new Date(year, month - 1, 1);
         const endDate = new Date(year, month, 0, 23, 59, 59);

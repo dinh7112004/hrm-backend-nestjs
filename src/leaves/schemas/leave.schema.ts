@@ -24,6 +24,15 @@ export class Leave extends Document {
 
     @Prop({ default: 'PENDING' })
     status: string;
+
+    @Prop({ default: 0 })
+    durationHours: number;
+
+    @Prop({ default: 0 })
+    paidHours: number;
+
+    @Prop({ default: 0 })
+    unpaidHours: number;
 }
 
 export const LeaveSchema = SchemaFactory.createForClass(Leave);

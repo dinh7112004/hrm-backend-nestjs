@@ -14,7 +14,7 @@ export class UsersService {
 
     // Cập nhật trạng thái nghỉ việc (isActive = false)
     async updateStatus(id: string, isActive: boolean) {
-        const user = await this.userModel.findByIdAndUpdate(id, { isActive }, { new: true });
+        const user = await this.userModel.findByIdAndUpdate(id, { isActive }, { returnDocument: 'after' });
         if (!user) throw new NotFoundException('Không tìm thấy nhân viên');
         return user;
     }
@@ -50,7 +50,7 @@ export class UsersService {
     // Cập nhật thông tin nhân viên
     async update(id: string, updateUserDto: any) {
         try {
-            const updatedUser = await this.userModel.findByIdAndUpdate(id, updateUserDto, { new: true }).exec();
+            const updatedUser = await this.userModel.findByIdAndUpdate(id, updateUserDto, { returnDocument: 'after' }).exec();
             if (!updatedUser) throw new NotFoundException('Không tìm thấy nhân viên để cập nhật');
             return updatedUser;
         } catch (error: any) {
@@ -85,7 +85,7 @@ export class UsersService {
         const updatedUser = await this.userModel.findByIdAndUpdate(
             id,
             { pushToken: token },
-            { new: true }
+            { returnDocument: 'after' }
         ).exec();
 
         if (!updatedUser) {
@@ -104,7 +104,7 @@ export class UsersService {
         const updatedUser = await this.userModel.findByIdAndUpdate(
             id,
             { baseSalary },
-            { new: true }
+            { returnDocument: 'after' }
         ).exec();
 
         if (!updatedUser) {

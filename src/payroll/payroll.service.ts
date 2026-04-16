@@ -41,6 +41,8 @@ export class PayrollService {
 
     // --- THUẬT TOÁN TÍNH GIỜ THỰC LÀM (Khoét nghỉ trưa, chặn đầu đuôi) ---
     private calculateActualWorkHours(actualCheckIn: Date, actualCheckOut: Date, shiftStartStr: string, shiftEndStr: string): number {
+        if (!actualCheckIn || !actualCheckOut) return 0;
+
         const shiftStart = new Date(actualCheckIn);
         const [startH, startM] = shiftStartStr.split(':').map(Number);
         shiftStart.setHours(startH, startM, 0, 0);
@@ -49,19 +51,21 @@ export class PayrollService {
         const [endH, endM] = shiftEndStr.split(':').map(Number);
         shiftEnd.setHours(endH, endM, 0, 0);
 
-        const lunchStart = new Date(actualCheckIn);
-        lunchStart.setHours(12, 0, 0, 0); // Nghỉ trưa cố định 12h00
-
-        const lunchEnd = new Date(actualCheckIn);
-        lunchEnd.setHours(13, 30, 0, 0); // Hết nghỉ trưa 1h30 chiều
-
+        // Chặn đầu đuôi theo ca làm việc trên Web quản trị
         let validStart = actualCheckIn < shiftStart ? shiftStart : actualCheckIn;
         let validEnd = actualCheckOut > shiftEnd ? shiftEnd : actualCheckOut;
 
         if (validStart >= validEnd) return 0;
 
+        // ĐỊNH NGHĨA KHUNG GIỜ NGHỈ TRƯA
+        const lunchStart = new Date(validStart);
+        lunchStart.setHours(12, 0, 0, 0);
+        const lunchEnd = new Date(validStart);
+        lunchEnd.setHours(13, 30, 0, 0);
+
         let totalMs = validEnd.getTime() - validStart.getTime();
 
+        // TÍNH TOÁN PHẦN GIAO THOA VỚI GIỜ NGHỈ TRƯA
         const overlapLunchStart = validStart > lunchStart ? validStart : lunchStart;
         const overlapLunchEnd = validEnd < lunchEnd ? validEnd : lunchEnd;
 
@@ -69,7 +73,7 @@ export class PayrollService {
             totalMs -= (overlapLunchEnd.getTime() - overlapLunchStart.getTime());
         }
 
-        return Math.round((totalMs / (1000 * 60 * 60)) * 100) / 100; // Trả về giờ (VD: 7.5)
+        return Math.round((totalMs / (1000 * 60 * 60)) * 100) / 100;
     }
 
     // --- HÀM TÍNH LƯƠNG CHÍNH ---
@@ -81,9 +85,13 @@ export class PayrollService {
         const startOfMonth = new Date(y, m - 1, 1);
         const endOfMonth = new Date(y, m, 0, 23, 59, 59);
 
-        // 1. Lấy thông tin cơ bản & cấu hình giờ làm
-        const user = await this.userModel.findById(userId);
-        if (!user) throw new Error("Không tìm thấy nhân viên này!");
+        // 1. Tìm User để lấy lương cơ bản (Chấp nhận cả _id hoặc mã nhân viên userId)
+        let user = await this.userModel.findById(userId).exec();
+        if (!user) {
+            user = await this.userModel.findOne({ userId: userId }).exec();
+        }
+
+        if (!user) throw new Error('Không tìm thấy nhân viên này!');
         const baseSalary = user.baseSalary || 0;
 
         let config = await this.configModel.findOne();
@@ -103,23 +111,63 @@ export class PayrollService {
         });
 
         let actualWorkHours = 0;
+        let lateCount = 0;
         attendances.forEach(att => {
             actualWorkHours += this.calculateActualWorkHours(att.checkInTime, att.checkOutTime, shiftStart, shiftEnd);
+            
+            if (att.checkInTime && att.checkOutTime) {
+                const shiftStartObj = new Date(att.checkInTime);
+                const [startH, startM] = shiftStart.split(':').map(Number);
+                shiftStartObj.setHours(startH, startM, 0, 0);
+
+                const shiftEndObj = new Date(att.checkOutTime);
+                const [endH, endM] = shiftEnd.split(':').map(Number);
+                shiftEndObj.setHours(endH, endM, 0, 0);
+
+                let isPenalty = false;
+                // Nếu đi muộn hơn 0 phút
+                if (new Date(att.checkInTime).getTime() > shiftStartObj.getTime()) {
+                    isPenalty = true;
+                }
+                // Nếu về sớm hơn 0 phút
+                if (new Date(att.checkOutTime).getTime() < shiftEndObj.getTime()) {
+                    isPenalty = true;
+                }
+                if (isPenalty) lateCount++;
+            }
         });
+
+        const parseDateStr = (dateStr: string): Date => {
+            if (!dateStr) return new Date();
+            // 1. Thử parse trực tiếp (Hỗ trợ ISO YYYY-MM-DD...)
+            const dObj = new Date(dateStr);
+            if (!isNaN(dObj.getTime())) return dObj;
+
+            // 2. Thử parse định dạng DD/MM/YYYY hoặc DD-MM-YYYY
+            try {
+                const cleanStr = dateStr.replace(/-/g, '/');
+                const parts = cleanStr.split(' ');
+                const dateParts = parts[0].split('/');
+                if (dateParts.length === 3) {
+                    const [d, m, y] = dateParts;
+                    const [hh, mm] = parts[1] ? parts[1].split(':') : ['00', '00'];
+                    const res = new Date(Number(y), Number(m) - 1, Number(d), Number(hh), Number(mm));
+                    if (!isNaN(res.getTime())) return res;
+                }
+            } catch (e) {}
+
+            return new Date();
+        };
 
         // 4. Cộng giờ nghỉ phép (Chỉ tính loại APPROVED)
         const leaves = await this.leaveModel.find({ userId, status: 'APPROVED' });
         let leaveHours = 0;
         leaves.forEach(leave => {
-            const leaveStart = new Date(leave.startDate);
+            if (!leave.startDate) return;
+            const leaveStart = parseDateStr(leave.startDate);
             if (leaveStart >= startOfMonth && leaveStart <= endOfMonth) {
-                if (leave.endDate) {
-                    const leaveEnd = new Date(leave.endDate);
-                    const days = Math.floor((leaveEnd.getTime() - leaveStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-                    leaveHours += days * 8;
-                } else {
-                    leaveHours += 8;
-                }
+                // Ưu tiên paidHours, nếu bằng 0 thì lấy durationHours (Phòng trường hợp lỗi lưu trữ hoặc hết quỹ phép)
+                leaveHours += (leave.paidHours || leave.durationHours || 0);
             }
         });
 
@@ -154,15 +202,19 @@ export class PayrollService {
                 baseSalary,
                 actualWorkDays,
                 actualWorkHours: totalValidHours,
+                rawWorkHours: Math.round(actualWorkHours * 100) / 100,
+                paidLeaveHours: Math.round(leaveHours * 100) / 100,
                 bonus: totalBonus,
                 bonusDetails,
                 fine: totalFine,
                 fineDetails,
                 netSalary,
                 netSalaryFull,
-                standardWorkDays
+                standardWorkDays,
+                hourlyRate: Math.round(salaryPerHour * 100) / 100,
+                lateCount
             },
-            { upsert: true, new: true }
+            { upsert: true, returnDocument: 'after' }
         ).populate('userId', 'name email baseSalary phone');
     }
 
@@ -181,7 +233,7 @@ export class PayrollService {
 
 
     async updateStatus(id: string, status: string) {
-        return this.payrollModel.findByIdAndUpdate(id, { status }, { new: true }).populate('userId', 'name email baseSalary phone');
+        return this.payrollModel.findByIdAndUpdate(id, { status }, { returnDocument: 'after' }).populate('userId', 'name email baseSalary phone');
     }
 
     async getPayrollByMonth(month: string) {

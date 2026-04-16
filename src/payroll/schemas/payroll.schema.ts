@@ -40,11 +40,23 @@ export class Payroll extends Document {
     @Prop({ default: 0 })
     netSalaryFull: number; // Lương thực nhận theo lương cơ bản (Full)
 
-    @Prop()
-    actualWorkHours: number; // Thêm trường này để lưu tổng số giờ
+    @Prop({ default: 0 })
+    actualWorkHours: number; // Tổng giờ hợp lệ (chấm công + phép có lương)
+
+    @Prop({ default: 0 })
+    paidLeaveHours: number; // Giờ nghỉ phép có lương được tính vào lương
+
+    @Prop({ default: 0 })
+    rawWorkHours: number; // Giờ chấm công thực tế (không tính phép)
 
     @Prop({ default: 'PENDING', enum: ['PENDING', 'CHECKED', 'PAID'] })
     status: string; // Trạng thái: Chờ duyệt, Đã kiểm tra, Đã thanh toán
+
+    @Prop({ default: 0 })
+    hourlyRate: number; // Đơn giá thực tế theo tháng
+
+    @Prop({ default: 0 })
+    lateCount: number; // Đi muộn về sớm
 }
 
 

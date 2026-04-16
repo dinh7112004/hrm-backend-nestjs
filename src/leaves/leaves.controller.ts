@@ -50,4 +50,12 @@ export class LeavesController {
   updateStatus(@Param('id') id: string, @Body('status') status: string) {
     return this.leavesService.updateStatus(id, status);
   }
+
+  @Get('user/:userId/month/:month')
+  findByUserAndMonth(
+    @Param('userId') userId: string,
+    @Param('month') month: string // MM-YYYY
+  ) {
+    return this.leavesService.findByUserAndMonth(userId, month);
+  }
 }
